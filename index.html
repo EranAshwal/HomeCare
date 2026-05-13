@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<!--
+╔══════════════════════════════════════════════════════════════════╗
+║                    🏠 HOME CARE APP                              ║
+║         Works on iPhone, Android, Windows, Mac — any browser    ║
+╠══════════════════════════════════════════════════════════════════╣
+║  OPTIONAL: Enable real-time sync between your phone & Venus     ║
+║                                                                  ║
+║  1. Go to https://console.firebase.google.com (free)            ║
+║  2. Create project → Build → Realtime Database → Test mode      ║
+║  3. Gear ⚙ → Project Settings → Web App → copy config values   ║
+║  4. Paste apiKey and databaseURL into the FIREBASE SETUP below  ║
+║  5. Drag this file to https://netlify.com/drop → get a URL      ║
+║  6. Share the URL with Venus                                     ║
+║                                                                  ║
+║  Without Firebase: works great on each device, no cross-sync    ║
+╚══════════════════════════════════════════════════════════════════╝
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Home Care">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1a6b72">
+  <title>🏠 Home Care</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    html,body{height:100%;overscroll-behavior:none;}
+    body{background:#f8f5f0;font-family:'Nunito',system-ui,sans-serif;-webkit-tap-highlight-color:transparent;}
+    button{cursor:pointer;transition:opacity .1s,transform .1s;font-family:inherit;}
+    button:active{opacity:.85;transform:scale(.97);}
+    input,textarea,select{font-family:inherit;}
+    input[type=number]::-webkit-outer-spin-button,
+    input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+    ::-webkit-scrollbar{width:4px;}
+    ::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:4px;}
+    @media print{.np{display:none!important;}body{background:white;}}
+  </style>
+</head>
+<body>
+<div id="root" style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f8f5f0;">
+  <div style="text-align:center">
+    <div style="font-size:64px">🏠</div>
+    <p style="color:#9ca3af;font-weight:700;font-size:18px;margin-top:12px">Loading...</p>
+  </div>
+</div>
+
+<!-- ═══ FIREBASE SETUP ══════════════════════════════════════════ -->
+<!-- Replace PASTE_... values with your Firebase project config   -->
+<script>
+  var FIREBASE_API_KEY = "AIzaSyCNQzenUAobvTg59CFhVfmFXIqlgobKL5M";
+  var FIREBASE_DB_URL  = "https://homecare-6854d-default-rtdb.firebaseio.com";
+</script>
+<!-- ══════════════════════════════════════════════════════════════ -->
+
+<!-- Firebase SDK (only loads if config is provided) -->
+<script>
+  if(!FIREBASE_API_KEY.includes("PASTE")){
+    var s1=document.createElement('script');
+    s1.src='https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js';
+    s1.onload=function(){
+      var s2=document.createElement('script');
+      s2.src='https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js';
+      s2.onload=function(){
+        try{
+          firebase.initializeApp({apiKey:FIREBASE_API_KEY,databaseURL:FIREBASE_DB_URL});
+          window._db=firebase.database();
+          console.log('Firebase connected ✓');
+        }catch(e){console.warn('Firebase error:',e);}
+      };
+      document.head.appendChild(s2);
+    };
+    document.head.appendChild(s1);
+  }
+</script>
+
+<!-- React + Babel -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+function fmt(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function pd(s) { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
+function cur(n) { return `$${Number(n).toFixed(2)}`; }
+
+const YEAR=new Date().getFullYear(), TODAY=fmt(new Date());
+const P='#1a6b72', ACC='#e8a020', BG='#f8f5f0';
+const DEFAULTS={hourlyRate:25,commuteRate:8,adminPIN:'1234',cleanerPIN:'5678'};
+const MONTHS={en:['January','February','March','April','May','June','July','August','September','October','November','December'],tl:['Enero','Pebrero','Marso','Abril','Mayo','Hunyo','Hulyo','Agosto','Setyembre','Oktubre','Nobyembre','Disyembre']};
+const STS={upcoming:{emoji:'⏳',en:'Upcoming',tl:'Paparating',c:'#3b82f6',bg:'#eff6ff'},worked:{emoji:'✅',en:'Worked',tl:'Nagtrabaho',c:'#0d9488',bg:'#f0fdfa'},paid:{emoji:'💰',en:'Paid',tl:'Nabayaran',c:'#16a34a',bg:'#f0fdf4'},cancelled:{emoji:'❌',en:'Cancelled',tl:'Nakansela',c:'#dc2626',bg:'#fef2f2'},rescheduled:{emoji:'🔄',en:'Rescheduled',tl:'Muling Iskedyul',c:'#d97706',bg:'#fefce8'}};
+
+function getHols(yr){
+  const h={},add=(m,d,n)=>{h[`${yr}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`]=n;};
+  add(1,1,"New Year's Day");add(7,1,"Canada Day");add(12,25,"Christmas Day");add(12,26,"Boxing Day");
+  let fd=new Date(yr,1,1),fc=0;while(fc<3){if(fd.getDay()===1)fc++;if(fc<3)fd.setDate(fd.getDate()+1);}add(2,fd.getDate(),"Family Day");
+  const a=yr%19,b=Math.floor(yr/100),c=yr%100,dd=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),hh=(19*a+b-dd-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-hh-k)%7,mm=Math.floor((a+11*hh+22*l)/451),em=Math.floor((hh+l-7*mm+114)/31),ed=((hh+l-7*mm+114)%31)+1;
+  const easter=new Date(yr,em-1,ed),gf=new Date(easter);gf.setDate(easter.getDate()-2);add(gf.getMonth()+1,gf.getDate(),"Good Friday");
+  let vd=new Date(yr,4,24);while(vd.getDay()!==1)vd.setDate(vd.getDate()-1);add(5,vd.getDate(),"Victoria Day");
+  let ch=new Date(yr,7,1);while(ch.getDay()!==1)ch.setDate(ch.getDate()+1);add(8,ch.getDate(),"Civic Holiday");
+  let ld=new Date(yr,8,1);while(ld.getDay()!==1)ld.setDate(ld.getDate()+1);add(9,ld.getDate(),"Labour Day");
+  let td=new Date(yr,9,1),tc=0;while(tc<2){if(td.getDay()===1)tc++;if(tc<2)td.setDate(td.getDate()+1);}add(10,td.getDate(),"Thanksgiving");
+  return h;
+}
+
+const START_DATE='2026-05-04';
+const APP_VERSION='v3-may4-fresh';
+
+function genVisits(){
+  const v={};
+  for(let m=0;m<12;m++)for(let d=1;d<=31;d++){
+    const dt=new Date(YEAR,m,d);if(dt.getMonth()!==m)break;
+    const ds=fmt(dt);if(ds<START_DATE)continue;
+    if(dt.getDay()===1||dt.getDay()===4){v[ds]={id:ds,date:ds,status:ds<TODAY?'worked':'upcoming',hours:7,paidDate:null,paidAmount:null,note:'',comments:[],isExtra:false};}
+  }
+  return v;
+}
+
+// ── STORAGE: Firebase (real-time sync) OR localStorage (single device) ──
+async function sGet(k){
+  if(window._db){try{const s=await window._db.ref('hc/'+k).once('value');return s.val();}catch{return null;}}
+  try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch{return null;}
+}
+function sSet(k,v){
+  if(window._db){try{window._db.ref('hc/'+k).set(v);}catch{}return;}
+  try{localStorage.setItem(k,JSON.stringify(v));}catch{}
+}
+
+function App(){
+  const [ready,setReady]=useState(false);
+  const [role,setRole]=useState(null);
+  const [lang,setLang]=useState('en');
+  const [tab,setTab]=useState('calendar');
+  const [viewMonth,setViewMonth]=useState(new Date());
+  const [whoChosen,setWhoChosen]=useState(null);
+  const [pinVal,setPinVal]=useState('');
+  const [pinErr,setPinErr]=useState(false);
+  const [selDate,setSelDate]=useState(null);
+  const [noteVal,setNoteVal]=useState('');
+  const [hrsVal,setHrsVal]=useState('7');
+  const [amtVal,setAmtVal]=useState('');
+  const [msgVal,setMsgVal]=useState('');
+  const [commentVal,setCommentVal]=useState('');
+  const [paidDateVal,setPaidDateVal]=useState(TODAY);
+  const [receiptVal,setReceiptVal]=useState('');
+  const [zoomImage,setZoomImage]=useState(null);
+  const [commentImg,setCommentImg]=useState('');
+  const [msgImg,setMsgImg]=useState('');
+  const [editCommentId,setEditCommentId]=useState(null);
+  const [editCommentText,setEditCommentText]=useState('');
+  const [editMsgId,setEditMsgId]=useState(null);
+  const [editMsgText,setEditMsgText]=useState('');
+  const [pendingDel,setPendingDel]=useState(null);
+  const [pFrom,setPFrom]=useState(`${YEAR}-01-01`);
+  const [pTo,setPTo]=useState(TODAY);
+  const [report,setReport]=useState(null);
+  const [settEdit,setSettEdit]=useState(null);
+  const [extraDate,setExtraDate]=useState('');
+  const [noteSaved,setNoteSaved]=useState(false);
+  const [visits,setVisits]=useState({});
+  const [msgs,setMsgs]=useState([]);
+  const [sett,setSett]=useState(DEFAULTS);
+  const [unread,setUnread]=useState(0);
+  const msgEndRef=useRef(null);
+  const HOLS=getHols(YEAR);
+  const L=lang;
+
+  useEffect(()=>{
+    (async()=>{
+      const ver=await sGet('hc:ver');
+      const s=await sGet('hc:s');
+      const seedSett=lo=>{
+        const out={...DEFAULTS,...(lo||{})};
+        if(!out.rateHistory||out.rateHistory.length===0){
+          out.rateHistory=[{effectiveDate:START_DATE,hourlyRate:out.hourlyRate,commuteRate:out.commuteRate,changedAt:new Date().toISOString(),note:'Initial rate'}];
+        }
+        return out;
+      };
+      if(ver!==APP_VERSION){
+        // Fresh start - wipe history, keep settings
+        const fresh=genVisits();
+        const seeded=seedSett(s);
+        sSet('hc:v',fresh);sSet('hc:m',[]);sSet('hc:u',0);sSet('hc:ver',APP_VERSION);sSet('hc:s',seeded);
+        setVisits(fresh);setMsgs([]);setUnread(0);
+        setSett(seeded);setReady(true);return;
+      }
+      const[v,m,u]=await Promise.all([sGet('hc:v'),sGet('hc:m'),sGet('hc:u')]);
+      const gen=genVisits();
+      if(v){
+        const mig={};let needSave=false;
+        Object.entries(v).forEach(([k,vis])=>{
+          if(!vis.comments){
+            needSave=true;
+            mig[k]={...vis,comments:vis.note?[{id:1,sender:'admin',name:'Note',text:vis.note,time:'(saved earlier)'}]:[]};
+          }else mig[k]=vis;
+        });
+        setVisits(mig);
+        if(needSave)sSet('hc:v',mig);
+      }else{setVisits(gen);sSet('hc:v',gen);}
+      const seeded=seedSett(s);
+      if(!s||!s.rateHistory)sSet('hc:s',seeded);
+      setMsgs(m||[]);setSett(seeded);setUnread(u||0);setReady(true);
+    })();
+  },[]);
+
+  useEffect(()=>{
+    if(!ready||!role)return;
+    const id=setInterval(async()=>{
+      const[v,m,s,u]=await Promise.all([sGet('hc:v'),sGet('hc:m'),sGet('hc:s'),sGet('hc:u')]);
+      if(v)setVisits(v);if(m)setMsgs(m);if(s)setSett({...DEFAULTS,...s});if(u!==null)setUnread(u);
+    },7000);
+    return()=>clearInterval(id);
+  },[ready,role]);
+
+  useEffect(()=>{ if(tab==='messages')msgEndRef.current?.scrollIntoView({behavior:'smooth'}); },[msgs,tab]);
+
+  useEffect(()=>{
+    if(tab==='messages'&&role==='admin'&&unread>0){setUnread(0);sSet('hc:u',0);}
+  },[tab]);
+
+  useEffect(()=>{
+    if(!role)return;
+    let lastAct=Date.now();
+    const bump=()=>{lastAct=Date.now();};
+    const evs=['touchstart','mousedown','keydown','scroll'];
+    evs.forEach(e=>document.addEventListener(e,bump,true));
+    const timer=setInterval(()=>{
+      if(Date.now()-lastAct>15*60*1000){
+        setRole(null);setTab('calendar');setSettEdit(null);setSelDate(null);
+      }
+    },20000);
+    return()=>{evs.forEach(e=>document.removeEventListener(e,bump,true));clearInterval(timer);};
+  },[role]);
+
+  const saveVisits=v=>{setVisits(v);sSet('hc:v',v);};
+  const saveMsgs=m=>{setMsgs(m);sSet('hc:m',m);};
+  const saveSett=s=>{setSett(s);sSet('hc:s',s);};
+
+  const handleLogin=()=>{
+    if(whoChosen==='admin'&&pinVal===sett.adminPIN){setRole('admin');setPinVal('');setPinErr(false);setWhoChosen(null);}
+    else if(whoChosen==='cleaner'&&pinVal===sett.cleanerPIN){setRole('cleaner');setPinVal('');setPinErr(false);setWhoChosen(null);}
+    else{setPinErr(true);setPinVal('');}
+  };
+
+  const openVisit=date=>{const v=visits[date];setSelDate(date);setNoteVal(v?.note||'');setHrsVal(String(v?.hours||7));setAmtVal('');setNoteSaved(false);setCommentVal('');setPaidDateVal(v?.paidDate||TODAY);setReceiptVal(v?.receipt||'');setZoomImage(null);setCommentImg('');setEditCommentId(null);setEditCommentText('');setPendingDel(null);};
+  const updateVisit=(date,chg)=>{const up={...visits,[date]:{...visits[date],...chg}};saveVisits(up);};
+  const handleReceiptUpload=e=>{
+    const file=e.target.files&&e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const img=new Image();
+      img.onload=()=>{
+        const canvas=document.createElement('canvas');
+        const maxW=800;const scale=Math.min(1,maxW/img.width);
+        canvas.width=img.width*scale;canvas.height=img.height*scale;
+        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+        setReceiptVal(canvas.toDataURL('image/jpeg',0.7));
+      };
+      img.src=ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+  const compressImage=(file,cb,maxW=720,quality=0.65)=>{
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const img=new Image();
+      img.onload=()=>{
+        const canvas=document.createElement('canvas');
+        const scale=Math.min(1,maxW/img.width);
+        canvas.width=img.width*scale;canvas.height=img.height*scale;
+        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+        cb(canvas.toDataURL('image/jpeg',quality));
+      };
+      img.src=ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+  const handleCommentImg=e=>{const f=e.target.files&&e.target.files[0];if(f)compressImage(f,setCommentImg);e.target.value='';};
+  const handleMsgImg=e=>{const f=e.target.files&&e.target.files[0];if(f)compressImage(f,setMsgImg);e.target.value='';};
+  const addComment=()=>{
+    if((!commentVal.trim()&&!commentImg)||!selDate)return;
+    const v=visits[selDate];
+    const nc={id:Date.now(),sender:role,name:role==='admin'?'Eran / Yahalom':'Venus',text:commentVal.trim(),time:new Date().toLocaleString('en-CA',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
+    if(commentImg)nc.image=commentImg;
+    const cs=v.comments||[];
+    updateVisit(selDate,{comments:[...cs,nc]});
+    setCommentVal('');setCommentImg('');
+  };
+  const startEditComment=c=>{setEditCommentId(c.id);setEditCommentText(c.text||'');setPendingDel(null);};
+  const saveEditComment=()=>{
+    if(!selDate||editCommentId===null)return;
+    const v=visits[selDate];
+    const updated=(v.comments||[]).map(c=>c.id===editCommentId?{...c,text:editCommentText.trim(),edited:true}:c);
+    updateVisit(selDate,{comments:updated});
+    setEditCommentId(null);setEditCommentText('');
+  };
+  const deleteComment=id=>{
+    if(!selDate)return;
+    const v=visits[selDate];
+    updateVisit(selDate,{comments:(v.comments||[]).filter(c=>c.id!==id)});
+    setPendingDel(null);
+  };
+  const startEditMsg=m=>{setEditMsgId(m.id);setEditMsgText(m.text||'');setPendingDel(null);};
+  const saveEditMsg=()=>{
+    if(editMsgId===null)return;
+    saveMsgs(msgs.map(m=>m.id===editMsgId?{...m,text:editMsgText.trim(),edited:true}:m));
+    setEditMsgId(null);setEditMsgText('');
+  };
+  const deleteMsg=id=>{
+    saveMsgs(msgs.filter(m=>m.id!==id));
+    setPendingDel(null);
+  };
+  const askDel=(scope,id)=>{
+    if(pendingDel&&pendingDel.scope===scope&&pendingDel.id===id){
+      if(scope==='comment')deleteComment(id);else deleteMsg(id);
+    }else{
+      setPendingDel({scope,id});
+    }
+  };
+  const markPaid=date=>{const v=visits[date];const hrs=parseFloat(hrsVal)||v?.hours||7;const r=getRate(date);const amt=amtVal?parseFloat(amtVal):hrs*r.hourlyRate+r.commuteRate;const pd=paidDateVal||TODAY;updateVisit(date,{status:'paid',paidDate:pd,paidAmount:amt,hours:hrs,receipt:receiptVal||null});setAmtVal('');};
+  const getRate=date=>{
+    const hist=(sett.rateHistory&&sett.rateHistory.length>0)?sett.rateHistory:[{effectiveDate:START_DATE,hourlyRate:sett.hourlyRate,commuteRate:sett.commuteRate}];
+    const sorted=[...hist].sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate));
+    const found=sorted.find(r=>r.effectiveDate<=(date||TODAY));
+    return found||sorted[sorted.length-1];
+  };
+  const calcAmt=(h,date)=>{const r=getRate(date);return (parseFloat(h)||7)*r.hourlyRate+r.commuteRate;};
+  const sendMsg=()=>{
+    if(!msgVal.trim()&&!msgImg)return;
+    const nm={id:Date.now(),sender:role,name:role==='admin'?'Eran / Yahalom':'Venus',text:msgVal.trim(),time:new Date().toLocaleString('en-CA',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
+    if(msgImg)nm.image=msgImg;
+    saveMsgs([...msgs,nm]);setMsgVal('');setMsgImg('');
+    if(role==='cleaner'){const nu=unread+1;setUnread(nu);sSet('hc:u',nu);}
+  };
+
+  const vList=Object.values(visits).sort((a,b)=>a.date.localeCompare(b.date));
+  const pending=vList.filter(v=>v.status==='worked');
+  const paidVs=vList.filter(v=>v.status==='paid'&&v.paidDate);
+  const lastPaidDate=paidVs.length>0?paidVs.map(v=>v.paidDate).sort().reverse()[0]:null;
+  const firstUnpaidDate=pending.length>0?pending.map(v=>v.date).sort()[0]:null;
+  const refDate=lastPaidDate||firstUnpaidDate;
+  const daysSinceRef=refDate?Math.floor((new Date(TODAY)-new Date(refDate))/(1000*60*60*24)):0;
+  const showPayReminder=role==='admin'&&pending.length>0&&!!refDate&&daysSinceRef>=14;
+  const PayReminder=()=>{
+    if(!showPayReminder)return null;
+    const txt=lastPaidDate
+      ?(L==='en'?`It's been ${daysSinceRef} days since last payment`:`${daysSinceRef} araw na mula nang huling bayad`)
+      :(L==='en'?`Venus has been working for ${daysSinceRef} days — time for first payment`:`${daysSinceRef} araw nang nagtatrabaho si Venus — oras na para sa unang bayad`);
+    return(<div onClick={()=>setTab('payment')} style={{cursor:'pointer',background:'linear-gradient(135deg,#fef3c7,#fde68a)',border:'1px solid #f59e0b',borderRadius:14,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10,boxShadow:'0 2px 8px rgba(245,158,11,0.2)'}}>
+      <span style={{fontSize:24}}>💰</span>
+      <div style={{flex:1,minWidth:0}}>
+        <p style={{margin:'0 0 2px',fontSize:13,fontWeight:800,color:'#92400e'}}>{L==='en'?'Time to pay Venus':'Oras na magbayad'}</p>
+        <p style={{margin:0,fontSize:11,fontWeight:600,color:'#b45309',lineHeight:1.3}}>{txt} · {pending.length} {L==='en'?'unpaid visit(s)':'hindi pa bayad'}</p>
+      </div>
+      <span style={{fontSize:18,color:'#92400e'}}>›</span>
+    </div>);
+  };
+  const owed=pending.reduce((s,v)=>s+calcAmt(v.hours,v.date),0);
+  const selV=selDate?visits[selDate]:null;
+  const TABS=[{id:'calendar',e:'📅',en:'Schedule',tl:'Iskedyul'},{id:'payment',e:'💰',en:'Payment',tl:'Bayad'},{id:'messages',e:'💬',en:'Messages',tl:'Mensahe'},...(role==='admin'?[{id:'settings',e:'⚙️',en:'Settings',tl:'Setting'}]:[])];
+  const card={background:'white',borderRadius:16,padding:20,boxShadow:'0 2px 10px rgba(0,0,0,0.07)',marginBottom:14};
+  const inp={width:'100%',padding:'12px',border:'1px solid #e5e7eb',borderRadius:10,fontFamily:'inherit',fontSize:16,fontWeight:600,boxSizing:'border-box',outline:'none',color:'#1f2937'};
+  const lbl={display:'block',fontSize:13,fontWeight:700,color:'#6b7280',marginBottom:6};
+
+  if(!ready)return(<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:BG,fontFamily:"'Nunito',system-ui,sans-serif"}}><style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');`}</style><div style={{textAlign:'center'}}><div style={{fontSize:64,marginBottom:12}}>🏠</div><p style={{color:'#9ca3af',fontWeight:700,fontSize:18,margin:0}}>Loading...</p></div></div>);
+
+  if(!role)return(
+    <div style={{fontFamily:"'Nunito',system-ui,sans-serif",background:BG,minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,position:'relative'}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');*{box-sizing:border-box;}button:active{opacity:.85;transform:scale(.97);}input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;}@media print{.np{display:none!important;}}`}</style>
+      <button onClick={()=>setLang(L==='en'?'tl':'en')} style={{position:'absolute',top:20,right:20,background:P,color:'white',border:'none',borderRadius:20,padding:'6px 14px',fontFamily:'inherit',fontWeight:700,cursor:'pointer',fontSize:13}}>{L==='en'?'🇵🇭 Filipino':'🇨🇦 English'}</button>
+      <div style={{textAlign:'center',marginBottom:36}}><div style={{fontSize:72}}>🏠</div><h1 style={{margin:'8px 0 4px',fontSize:32,fontWeight:900,color:P}}>Home Care</h1><p style={{margin:0,color:'#9ca3af',fontSize:15,fontWeight:600}}>{L==='en'?'Household Management':'Pamamahala ng Tahanan'}</p></div>
+      <div style={{width:'100%',maxWidth:340}}>
+        {!whoChosen?(
+          <>
+            <p style={{textAlign:'center',fontWeight:700,color:'#374151',marginBottom:20,fontSize:17}}>{L==='en'?'Who are you?':'Sino ka?'}</p>
+            <button onClick={()=>setWhoChosen('admin')} style={{width:'100%',padding:'18px 20px',background:P,color:'white',border:'none',borderRadius:16,fontFamily:'inherit',fontWeight:800,fontSize:18,cursor:'pointer',marginBottom:14,display:'flex',alignItems:'center',gap:14,boxShadow:`0 4px 14px ${P}40`}}><span style={{fontSize:28}}>🔑</span><div>Eran &amp; Yahalom</div></button>
+            <button onClick={()=>setWhoChosen('cleaner')} style={{width:'100%',padding:'18px 20px',background:'white',color:P,border:`3px solid ${P}`,borderRadius:16,fontFamily:'inherit',fontWeight:800,fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',gap:14}}><span style={{fontSize:28}}>✨</span><div>Venus</div></button>
+          </>
+        ):(
+          <>
+            <p style={{textAlign:'center',fontWeight:700,color:'#374151',marginBottom:20,fontSize:17}}>{L==='en'?'Enter your PIN':'Ilagay ang iyong PIN'}</p>
+            <input type="password" value={pinVal} onChange={e=>setPinVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()} placeholder="• • • •" autoFocus style={{width:'100%',padding:'16px',fontSize:28,textAlign:'center',letterSpacing:12,borderRadius:12,border:`2px solid ${pinErr?'#ef4444':'#e5e7eb'}`,outline:'none',fontFamily:'inherit',marginBottom:8,color:'#1f2937'}}/>
+            {pinErr&&<p style={{color:'#ef4444',textAlign:'center',fontSize:14,margin:'0 0 10px',fontWeight:600}}>{L==='en'?'❌ Wrong PIN, please try again':'❌ Maling PIN, subukan muli'}</p>}
+            <button onClick={handleLogin} style={{width:'100%',padding:15,background:ACC,color:'white',border:'none',borderRadius:12,fontFamily:'inherit',fontWeight:800,fontSize:18,cursor:'pointer',marginBottom:10,boxShadow:`0 4px 14px ${ACC}50`}}>{L==='en'?'Sign In':'Mag-sign In'}</button>
+            <button onClick={()=>{setWhoChosen(null);setPinVal('');setPinErr(false);}} style={{width:'100%',padding:10,background:'none',border:'none',color:'#9ca3af',fontFamily:'inherit',fontWeight:600,fontSize:14,cursor:'pointer'}}>← {L==='en'?'Back':'Bumalik'}</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  const CalendarTab=()=>{
+    const yr=viewMonth.getFullYear(),mo=viewMonth.getMonth();
+    const fd=new Date(yr,mo,1).getDay(),dim=new Date(yr,mo+1,0).getDate();
+    const dh=L==='en'?['S','M','T','W','T','F','S']:['L','L','M','M','H','B','S'];
+    return(<div>
+      {PayReminder()}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
+        <button onClick={()=>setViewMonth(new Date(yr,mo-1,1))} style={{background:'white',border:'none',width:40,height:40,borderRadius:12,fontSize:20,cursor:'pointer',color:P,boxShadow:'0 1px 4px rgba(0,0,0,0.1)',display:'flex',alignItems:'center',justifyContent:'center'}}>‹</button>
+        <div style={{textAlign:'center'}}><h2 style={{margin:'0 0 2px',fontSize:20,fontWeight:900,color:'#1f2937'}}>{MONTHS[L][mo]} {yr}</h2><p style={{margin:0,fontSize:12,color:'#9ca3af',fontWeight:600}}>{L==='en'?'Tap a visit day for details':'I-tap ang araw para sa detalye'}</p></div>
+        <button onClick={()=>setViewMonth(new Date(yr,mo+1,1))} style={{background:'white',border:'none',width:40,height:40,borderRadius:12,fontSize:20,cursor:'pointer',color:P,boxShadow:'0 1px 4px rgba(0,0,0,0.1)',display:'flex',alignItems:'center',justifyContent:'center'}}>›</button>
+      </div>
+      <div style={{...card,padding:16}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:4,marginBottom:8}}>{dh.map((d,i)=><div key={i} style={{textAlign:'center',fontSize:11,fontWeight:700,color:'#9ca3af',padding:'4px 0'}}>{d}</div>)}</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:4}}>
+          {Array(fd).fill(null).map((_,i)=><div key={`e${i}`}/>)}
+          {Array.from({length:dim},(_,i)=>i+1).map(day=>{
+            const ds=`${yr}-${String(mo+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+            const visit=visits[ds],isToday=ds===TODAY,hol=HOLS[ds],si=visit?STS[visit.status]:null;
+            return(<div key={day} onClick={()=>visit&&openVisit(ds)} style={{aspectRatio:'1',borderRadius:10,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:visit?'pointer':'default',background:si?si.bg:hol?'#fef9e7':'transparent',border:isToday?`2px solid ${P}`:si?`1px solid ${si.c}30`:'none',position:'relative'}}>
+              {hol&&<div style={{position:'absolute',top:1,right:2,fontSize:7,color:'#d97706'}}>★</div>}
+              {visit&&visit.comments&&visit.comments.length>0&&<div style={{position:'absolute',bottom:2,right:2,background:'#6366f1',color:'white',borderRadius:8,minWidth:14,height:14,fontSize:9,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 3px',lineHeight:1}}>💬</div>}
+              <span style={{fontSize:13,fontWeight:isToday?900:600,color:si?si.c:hol?'#d97706':'#374151',lineHeight:1}}>{day}</span>
+              {visit&&<span style={{fontSize:10,lineHeight:1}}>{si.emoji}</span>}
+            </div>);
+          })}
+        </div>
+      </div>
+      <div style={{...card,padding:'12px 16px'}}>
+        <div style={{display:'flex',flexWrap:'wrap',gap:'6px 14px'}}>
+          {Object.entries(STS).map(([k,s])=><div key={k} style={{display:'flex',alignItems:'center',gap:4}}><span>{s.emoji}</span><span style={{fontSize:12,color:s.c,fontWeight:700}}>{s[L]}</span></div>)}
+          <div style={{display:'flex',alignItems:'center',gap:4}}><span style={{fontSize:12,color:'#d97706'}}>★</span><span style={{fontSize:12,color:'#d97706',fontWeight:700}}>{L==='en'?'Holiday':'Pista Opisyal'}</span></div>
+        </div>
+      </div>
+    </div>);
+  };
+
+  const PaymentTab=()=>{
+    if(report){
+      const tot=report.reduce((s,v)=>s+(v.paidAmount||calcAmt(v.hours,v.date)),0);
+      return(<div>
+        <button onClick={()=>setReport(null)} className="np" style={{background:'none',border:'none',color:P,fontWeight:700,cursor:'pointer',fontSize:15,marginBottom:16}}>← {L==='en'?'Back':'Bumalik'}</button>
+        <div style={{...card}}>
+          <h3 style={{margin:'0 0 4px',color:P,fontSize:18,fontWeight:900}}>🏠 Home Care — Venus</h3>
+          <p style={{margin:'0 0 16px',color:'#9ca3af',fontSize:13}}>{L==='en'?'Payment Summary':'Buod ng Bayad'} · {pFrom} → {pTo}</p>
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13,minWidth:340}}>
+              <thead><tr style={{borderBottom:'2px solid #e5e7eb'}}>{[L==='en'?'Date':'Petsa','Day','Hrs',L==='en'?'Amount':'Halaga',L==='en'?'Status':'Katayuan',L==='en'?'Paid On':'Bayad Noong'].map(h=><th key={h} style={{padding:'6px',color:'#6b7280',fontWeight:700,textAlign:'left',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
+              <tbody>{report.map(v=>{const d=pd(v.date);return(<tr key={v.id} style={{borderBottom:'1px solid #f3f4f6'}}><td style={{padding:'8px 6px',fontWeight:700}}>{d.toLocaleDateString('en-CA',{month:'short',day:'numeric'})}</td><td style={{padding:'8px 6px',color:'#9ca3af',fontSize:12}}>{d.toLocaleDateString('en-CA',{weekday:'short'})}</td><td style={{padding:'8px 6px'}}>{v.hours}h</td><td style={{padding:'8px 6px',fontWeight:800,color:P}}>{cur(v.paidAmount||calcAmt(v.hours,v.date))}</td><td style={{padding:'8px 6px'}}><span style={{color:STS[v.status].c,fontWeight:700}}>{STS[v.status].emoji} {STS[v.status][L]}</span></td><td style={{padding:'8px 6px',color:'#9ca3af',fontSize:12}}>{v.paidDate||'—'}</td></tr>);})}</tbody>
+              <tfoot><tr style={{borderTop:'2px solid #e5e7eb'}}><td colSpan={3} style={{padding:'12px 6px',fontWeight:800,color:P,fontSize:15}}>{L==='en'?'TOTAL':'KABUUAN'}</td><td colSpan={3} style={{padding:'12px 6px',fontWeight:900,color:P,fontSize:24}}>{cur(tot)}</td></tr></tfoot>
+            </table>
+          </div>
+          {report.length===0&&<p style={{textAlign:'center',color:'#9ca3af',fontWeight:600,padding:'20px 0',margin:0}}>{L==='en'?'No visits in this period.':'Walang bisita sa panahong ito.'}</p>}
+        </div>
+        <button onClick={()=>window.print()} className="np" style={{width:'100%',padding:14,background:P,color:'white',border:'none',borderRadius:12,fontFamily:'inherit',fontWeight:700,fontSize:16,cursor:'pointer'}}>🖨️ {L==='en'?'Print / Save as PDF':'I-print / I-save bilang PDF'}</button>
+      </div>);
+    }
+    const paid=vList.filter(v=>v.status==='paid').slice(-5).reverse();
+    return(<div>
+      {PayReminder()}
+      {role!=='admin'&&<div style={{textAlign:'center',marginBottom:14,padding:'10px 14px',background:'rgba(99,102,241,0.08)',borderRadius:12,border:'1px solid rgba(99,102,241,0.25)',fontSize:13,fontWeight:700,color:'#4f46e5'}}>👁 {L==='en'?'View only — payments managed by Eran & Yahalom':'Tingnan lamang — pinamamahalaan ng Admin'}</div>}
+      <div style={{background:`linear-gradient(135deg,${P},#0d9488)`,borderRadius:20,padding:'24px 20px',color:'white',marginBottom:14,boxShadow:`0 6px 20px ${P}40`}}>
+        <p style={{margin:'0 0 4px',opacity:.85,fontSize:14,fontWeight:700}}>{L==='en'?'Unpaid Balance':'Natitirang Bayad'}</p>
+        <p style={{margin:'0 0 10px',fontSize:46,fontWeight:900,letterSpacing:-2}}>{cur(owed)}</p>
+        <p style={{margin:0,fontSize:13,fontWeight:600,opacity:.85}}>{pending.length} {L==='en'?'visit(s) awaiting payment':'bisitang naghihintay ng bayad'}</p>
+      </div>
+      <div style={{...card,padding:16}}>{(()=>{const tr=getRate(TODAY);return(<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr'}}>{[{l:L==='en'?'Hourly':'Bawat Oras',v:`${cur(tr.hourlyRate)}/h`},{l:L==='en'?'Commute':'Pamasahe',v:cur(tr.commuteRate)},{l:L==='en'?'Per Visit':'Bawat Bisita',v:cur(7*tr.hourlyRate+tr.commuteRate)}].map((r,i)=><div key={i} style={{textAlign:'center',padding:'4px 8px',borderRight:i<2?'1px solid #f3f4f6':'none'}}><p style={{margin:'0 0 2px',fontSize:11,color:'#9ca3af',fontWeight:700}}>{r.l}</p><p style={{margin:0,fontSize:16,fontWeight:900,color:i===2?ACC:P}}>{r.v}</p></div>)}</div>);})()}</div>
+      {pending.length>0&&<div style={{...card}}><h3 style={{margin:'0 0 14px',fontSize:15,fontWeight:800,color:'#1f2937'}}>⏳ {L==='en'?'Awaiting Payment':'Naghihintay ng Bayad'}</h3>{pending.map(v=>{const a=calcAmt(v.hours,v.date);const r=getRate(v.date);return(<div key={v.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid #f9fafb'}}><div><p style={{margin:'0 0 2px',fontWeight:800,fontSize:14,color:'#1f2937'}}>{pd(v.date).toLocaleDateString('en-CA',{weekday:'short',month:'short',day:'numeric'})}</p><p style={{margin:0,fontSize:12,color:'#9ca3af'}}>{v.hours}h × {cur(r.hourlyRate)} + {cur(r.commuteRate)}</p></div><div style={{textAlign:'right'}}><p style={{margin:'0 0 4px',fontWeight:900,color:P,fontSize:17}}>{cur(a)}</p>{role==='admin'&&<button onClick={()=>openVisit(v.date)} style={{fontSize:12,background:STS.paid.bg,color:STS.paid.c,border:`1px solid ${STS.paid.c}50`,borderRadius:8,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit',fontWeight:700}}>💰 {L==='en'?'Mark Paid':'Bayad na'}</button>}</div></div>);})}</div>}
+      {paid.length>0&&<div style={{...card}}><h3 style={{margin:'0 0 14px',fontSize:15,fontWeight:800,color:'#1f2937'}}>💰 {L==='en'?'Recent Payments':'Mga Nakaraang Bayad'}</h3>{paid.map(v=><div key={v.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid #f9fafb'}}><div><p style={{margin:'0 0 2px',fontWeight:700,fontSize:14,color:'#1f2937'}}>{pd(v.date).toLocaleDateString('en-CA',{weekday:'short',month:'short',day:'numeric'})}</p><p style={{margin:0,fontSize:12,color:'#9ca3af'}}>{L==='en'?'Paid on':'Bayad noong'} {v.paidDate}</p></div><p style={{margin:0,fontWeight:900,color:'#16a34a',fontSize:17}}>{cur(v.paidAmount)}</p></div>)}</div>}
+      <div style={{...card}}>
+        <h3 style={{margin:'0 0 14px',fontSize:15,fontWeight:800,color:'#1f2937'}}>🖨️ {L==='en'?'Generate Report':'Gumawa ng Ulat'}</h3>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>{[{lb:L==='en'?'From':'Mula',val:pFrom,set:setPFrom},{lb:L==='en'?'To':'Hanggang',val:pTo,set:setPTo}].map(f=><div key={f.lb}><label style={lbl}>{f.lb}</label><input type="date" value={f.val} onChange={e=>f.set(e.target.value)} style={{width:'100%',height:44,padding:'0 12px',border:'1px solid #e5e7eb',borderRadius:10,fontFamily:'inherit',fontSize:14,boxSizing:'border-box',outline:'none',background:'white',color:'#1f2937',WebkitAppearance:'none',appearance:'none'}}/></div>)}</div>
+        <button onClick={()=>setReport(vList.filter(v=>v.date>=pFrom&&v.date<=pTo&&(v.status==='worked'||v.status==='paid')))} style={{width:'100%',padding:13,background:P,color:'white',border:'none',borderRadius:12,fontFamily:'inherit',fontWeight:700,fontSize:15,cursor:'pointer'}}>{L==='en'?'Generate Report':'Buuin ang Ulat'}</button>
+      </div>
+    </div>);
+  };
+
+  const MessagesTab=()=>(<div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 195px)'}}>
+    <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:12,paddingBottom:8}}>
+      {msgs.length===0&&<div style={{textAlign:'center',padding:'40px 20px',color:'#9ca3af'}}><div style={{fontSize:52,marginBottom:12}}>💬</div><p style={{fontWeight:700,fontSize:16,margin:'0 0 6px'}}>{L==='en'?'No messages yet.':'Wala pang mensahe.'}</p><p style={{fontWeight:600,fontSize:14,margin:0,lineHeight:1.5}}>{L==='en'?'Use this for reschedule requests and questions.':'Gamitin para sa mga kahilingan o tagubilin.'}</p></div>}
+      {msgs.map(m=>{const mine=m.sender===role;const isEd=m.id===editMsgId;const delPending=pendingDel&&pendingDel.scope==='message'&&pendingDel.id===m.id;
+        if(isEd)return(<div key={m.id} style={{display:'flex',flexDirection:'column',alignItems:'stretch',background:'white',padding:12,borderRadius:14,border:`2px solid ${P}`}}>
+          <textarea value={editMsgText} onChange={e=>setEditMsgText(e.target.value)} rows={3} style={{width:'100%',padding:10,border:'1px solid #e5e7eb',borderRadius:10,fontFamily:'inherit',fontSize:15,boxSizing:'border-box',outline:'none',resize:'vertical',marginBottom:8}}/>
+          <div style={{display:'flex',gap:6,justifyContent:'flex-end'}}>
+            <button onClick={()=>{setEditMsgId(null);setEditMsgText('');}} style={{padding:'8px 16px',background:'#f3f4f6',color:'#6b7280',border:'none',borderRadius:8,fontFamily:'inherit',fontWeight:700,fontSize:14,cursor:'pointer'}}>{L==='en'?'Cancel':'Kanselahin'}</button>
+            <button onClick={saveEditMsg} style={{padding:'8px 16px',background:P,color:'white',border:'none',borderRadius:8,fontFamily:'inherit',fontWeight:700,fontSize:14,cursor:'pointer'}}>{L==='en'?'Save':'I-save'}</button>
+          </div>
+        </div>);
+        return(<div key={m.id} style={{display:'flex',flexDirection:'column',alignItems:mine?'flex-end':'flex-start'}}>
+        <p style={{margin:'0 0 4px',fontSize:11,color:'#9ca3af',fontWeight:700,paddingLeft:4,paddingRight:4}}>{m.name} · {m.time}{m.edited?` · ${L==='en'?'edited':'na-edit'}`:''}</p>
+        {m.image&&<img src={m.image} onClick={()=>setZoomImage(m.image)} style={{maxWidth:'70%',maxHeight:240,borderRadius:14,marginBottom:m.text?4:0,cursor:'zoom-in',boxShadow:'0 2px 6px rgba(0,0,0,0.12)'}} alt=""/>}
+        {m.text&&<div style={{background:mine?P:'white',color:mine?'white':'#1f2937',borderRadius:mine?'18px 18px 4px 18px':'18px 18px 18px 4px',padding:'12px 16px',maxWidth:'80%',boxShadow:'0 2px 6px rgba(0,0,0,0.1)',fontSize:15,lineHeight:1.5,wordBreak:'break-word'}}>{m.text}</div>}
+        {mine&&<div style={{display:'flex',gap:12,marginTop:4,paddingRight:4}}>
+          {m.text&&<button onClick={()=>startEditMsg(m)} style={{background:'none',border:'none',color:'#6b7280',fontFamily:'inherit',fontSize:12,fontWeight:700,cursor:'pointer',padding:'2px 4px'}}>✏️ {L==='en'?'Edit':'I-edit'}</button>}
+          <button onClick={()=>askDel('message',m.id)} style={{background:'none',border:'none',color:delPending?'#dc2626':'#6b7280',fontFamily:'inherit',fontSize:12,fontWeight:delPending?800:700,cursor:'pointer',padding:'2px 4px'}}>🗑 {delPending?(L==='en'?'Tap again':'I-tap muli'):(L==='en'?'Delete':'Burahin')}</button>
+        </div>}
+      </div>);})}
+      <div ref={msgEndRef}/>
+    </div>
+    {msgImg&&<div style={{position:'relative',padding:'8px 0',display:'inline-block'}}><img src={msgImg} style={{maxWidth:140,maxHeight:140,borderRadius:10,border:'1px solid #e5e7eb'}}/><button onClick={()=>setMsgImg('')} style={{position:'absolute',top:2,right:-6,background:'#ef4444',color:'white',border:'2px solid white',width:26,height:26,borderRadius:13,fontSize:15,fontWeight:800,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,lineHeight:1}}>×</button></div>}
+    <div style={{display:'flex',gap:6,paddingTop:12,borderTop:'1px solid #e5e7eb',alignItems:'center'}}>
+      <label style={{background:'#f1f5f9',color:'#64748b',border:'none',borderRadius:'50%',width:46,height:46,cursor:'pointer',fontSize:20,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>📷<input type="file" accept="image/*" onChange={handleMsgImg} style={{display:'none'}}/></label>
+      <input value={msgVal} onChange={e=>setMsgVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendMsg()} placeholder={L==='en'?'Type a message...':'Mag-type ng mensahe...'} style={{flex:1,padding:'12px 16px',border:'1px solid #e5e7eb',borderRadius:24,fontFamily:'inherit',fontSize:15,outline:'none',background:'white',minWidth:0}}/>
+      <button onClick={sendMsg} style={{background:P,color:'white',border:'none',borderRadius:'50%',width:46,height:46,cursor:'pointer',fontSize:17,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,boxShadow:`0 2px 8px ${P}50`}}>➤</button>
+    </div>
+  </div>);
+
+  const SettingsTab=()=>{
+    if(role!=='admin')return(<div style={{textAlign:'center',padding:'60px 20px',color:'#9ca3af'}}><div style={{fontSize:52}}>🔒</div><p style={{fontWeight:800,fontSize:17,marginTop:12,color:'#6b7280'}}>{L==='en'?'Admin access only':'Para sa Admin lamang'}</p><p style={{fontWeight:600,fontSize:13,marginTop:6,maxWidth:260,margin:'6px auto 0',lineHeight:1.5}}>{L==='en'?'Pay rates, PINs, and visit changes can only be edited by Eran & Yahalom.':'Ang mga bayad, PIN, at pagbabago ng bisita ay maaari lamang baguhin ng Admin.'}</p></div>);
+    const s=settEdit||sett;
+    return(<div>
+      <div style={{...card}}>
+        <h3 style={{margin:'0 0 16px',fontSize:16,fontWeight:800,color:'#1f2937'}}>💰 {L==='en'?'Pay Rates':'Mga Bayad'}</h3>
+        <div style={{marginBottom:14}}><label style={lbl}>{L==='en'?'Hourly Rate ($ per hour)':'Bayad sa Oras ($ bawat oras)'}</label><input type="number" min="0" step="0.5" value={s.hourlyRate} onChange={e=>setSettEdit({...s,hourlyRate:parseFloat(e.target.value)||0})} style={inp}/></div>
+        <div style={{marginBottom:16}}><label style={lbl}>{L==='en'?'Commute Reimbursement ($)':'Pamasahe ($)'}</label><input type="number" min="0" step="0.5" value={s.commuteRate} onChange={e=>setSettEdit({...s,commuteRate:parseFloat(e.target.value)||0})} style={inp}/></div>
+        {settEdit&&(settEdit.hourlyRate!==sett.hourlyRate||settEdit.commuteRate!==sett.commuteRate)&&<div style={{background:'#fefce8',border:'1px solid #fde68a',borderRadius:12,padding:14,marginBottom:14}}>
+          <label style={{...lbl,color:'#92400e'}}>📅 {L==='en'?'New rates effective from':'Magsisimula sa'}</label>
+          <input type="date" value={s._effectiveDate||TODAY} onChange={e=>setSettEdit({...s,_effectiveDate:e.target.value})} style={{...inp,height:44,padding:'0 12px',WebkitAppearance:'none',appearance:'none'}}/>
+          <p style={{margin:'8px 0 0',fontSize:12,color:'#92400e',fontWeight:600,lineHeight:1.4}}>{L==='en'?'Visits before this date keep their old rates. Paid visits never change.':'Ang mga bisita bago ang petsang ito ay mananatili sa lumang bayad. Ang mga bayad na ay hindi magbabago.'}</p>
+        </div>}
+        <div style={{background:BG,borderRadius:12,padding:14}}><p style={{margin:0,fontSize:15,color:'#374151',fontWeight:700}}>{L==='en'?'Standard visit (7h)':'Karaniwang bisita (7h)'}:<span style={{color:P,fontSize:20,fontWeight:900,marginLeft:8}}>{cur(s.hourlyRate*7+s.commuteRate)}</span></p></div>
+      </div>
+      {sett.rateHistory&&sett.rateHistory.length>0&&<div style={{...card}}>
+        <h3 style={{margin:'0 0 14px',fontSize:16,fontWeight:800,color:'#1f2937'}}>📜 {L==='en'?'Rate History':'Talaan ng mga Bayad'}</h3>
+        {[...sett.rateHistory].sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)).map((r,i)=><div key={i} style={{padding:'10px 0',borderBottom:i<sett.rateHistory.length-1?'1px solid #f3f4f6':'none',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <p style={{margin:'0 0 2px',fontWeight:800,fontSize:14,color:'#1f2937'}}>{L==='en'?'From':'Mula'} {pd(r.effectiveDate).toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'})}</p>
+            <p style={{margin:0,fontSize:12,color:'#9ca3af',fontWeight:600}}>{cur(r.hourlyRate)}/h + {cur(r.commuteRate)} {L==='en'?'commute':'pamasahe'}{r.note?` · ${r.note}`:''}</p>
+          </div>
+          <span style={{fontWeight:900,color:P,fontSize:15}}>{cur(r.hourlyRate*7+r.commuteRate)}</span>
+        </div>)}
+      </div>}
+      <div style={{...card}}>
+        <h3 style={{margin:'0 0 16px',fontSize:16,fontWeight:800,color:'#1f2937'}}>🔒 {L==='en'?'Access PINs':'Mga PIN'}</h3>
+        <div style={{marginBottom:14}}><label style={lbl}>{L==='en'?'Admin PIN (Eran & Yahalom)':'Admin PIN'}</label><input type="text" value={s.adminPIN} onChange={e=>setSettEdit({...s,adminPIN:e.target.value})} style={inp}/></div>
+        <div><label style={lbl}>{L==='en'?'Cleaner PIN (Venus)':'PIN ni Venus'}</label><input type="text" value={s.cleanerPIN} onChange={e=>setSettEdit({...s,cleanerPIN:e.target.value})} style={inp}/></div>
+      </div>
+      <div style={{...card}}>
+        <h3 style={{margin:'0 0 16px',fontSize:16,fontWeight:800,color:'#1f2937'}}>➕ {L==='en'?'Add Extra Visit':'Dagdag na Bisita'}</h3>
+        <div style={{marginBottom:12}}><label style={lbl}>{L==='en'?'Date':'Petsa'}</label><input type="date" value={extraDate} onChange={e=>setExtraDate(e.target.value)} style={inp}/></div>
+        <button onClick={()=>{if(!extraDate)return;const up={...visits,[extraDate]:{id:extraDate,date:extraDate,status:'upcoming',hours:7,paidDate:null,paidAmount:null,note:L==='en'?'Extra visit':'Karagdagang bisita',isExtra:true,comments:[]}};saveVisits(up);setExtraDate('');setViewMonth(pd(extraDate));setTab('calendar');}} style={{width:'100%',padding:13,background:ACC,color:'white',border:'none',borderRadius:12,fontFamily:'inherit',fontWeight:700,fontSize:15,cursor:'pointer'}}>{L==='en'?'Add Visit to Calendar':'Idagdag sa Kalendaryo'}</button>
+      </div>
+      <button onClick={()=>{
+        if(!settEdit)return;
+        const ratesChanged=(settEdit.hourlyRate!==sett.hourlyRate)||(settEdit.commuteRate!==sett.commuteRate);
+        const newSett={...settEdit};
+        if(ratesChanged){
+          const eff=settEdit._effectiveDate||TODAY;
+          const entry={effectiveDate:eff,hourlyRate:settEdit.hourlyRate,commuteRate:settEdit.commuteRate,changedAt:new Date().toISOString(),note:L==='en'?'Updated by admin':'Inupdate ng admin'};
+          newSett.rateHistory=[...(sett.rateHistory||[]),entry];
+        }
+        delete newSett._effectiveDate;
+        saveSett(newSett);setSettEdit(null);
+      }} disabled={!settEdit} style={{width:'100%',padding:16,background:settEdit?P:'#e5e7eb',color:settEdit?'white':'#9ca3af',border:'none',borderRadius:12,fontFamily:'inherit',fontWeight:800,fontSize:16,cursor:settEdit?'pointer':'default',boxShadow:settEdit?`0 4px 14px ${P}40`:'none',marginBottom:24}}>{settEdit?`✓ ${L==='en'?'Save Changes':'I-save ang Pagbabago'}`:(L==='en'?'No unsaved changes':'Walang pagbabago')}</button>
+    </div>);
+  };
+
+  const VisitModal=()=>{
+    if(!selDate||!selV)return null;
+    const si=STS[selV.status],hol=HOLS[selDate],amt=calcAmt(role==='admin'?hrsVal:selV.hours,selDate);
+    return(<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:100,display:'flex',alignItems:'flex-end'}} onClick={e=>e.target===e.currentTarget&&setSelDate(null)}>
+      <div style={{background:'white',borderRadius:'24px 24px 0 0',width:'100%',maxWidth:480,margin:'0 auto',padding:24,maxHeight:'90vh',overflowY:'auto'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
+          <div><p style={{margin:'0 0 4px',fontWeight:900,fontSize:18,color:'#1f2937'}}>{pd(selDate).toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p>{hol&&<p style={{margin:'0 0 2px',fontSize:13,color:'#d97706',fontWeight:700}}>★ {hol}</p>}{selV.isExtra&&<p style={{margin:0,fontSize:12,color:'#6366f1',fontWeight:700}}>✦ {L==='en'?'Extra visit':'Karagdagang bisita'}</p>}</div>
+          <button onClick={()=>setSelDate(null)} style={{background:BG,border:'none',width:36,height:36,borderRadius:18,fontSize:20,cursor:'pointer',color:'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>×</button>
+        </div>
+        <div style={{display:'inline-flex',alignItems:'center',gap:8,background:si.bg,borderRadius:20,padding:'7px 16px',marginBottom:18,border:`1px solid ${si.c}30`}}><span style={{fontSize:18}}>{si.emoji}</span><span style={{color:si.c,fontWeight:800,fontSize:15}}>{si[L]}</span></div>
+        {role==='admin'&&<div style={{background:BG,borderRadius:14,padding:16,marginBottom:18}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+            <span style={{fontSize:14,fontWeight:700,color:'#374151'}}>{L==='en'?'Hours worked':'Oras ng trabaho'}</span>
+            <input type="number" value={hrsVal} onChange={e=>setHrsVal(e.target.value)} min="1" max="24" style={{width:72,padding:'6px 8px',border:`2px solid ${P}`,borderRadius:10,fontFamily:'inherit',fontSize:18,fontWeight:800,textAlign:'center',color:P,outline:'none'}}/>
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:13,color:'#9ca3af',fontWeight:600}}>{hrsVal}h × {cur(getRate(selDate).hourlyRate)} + {cur(getRate(selDate).commuteRate)}</span><span style={{fontWeight:900,color:P,fontSize:26}}>{cur(amt)}</span></div>
+        </div>}
+        {selV.status==='paid'&&<div style={{background:STS.paid.bg,borderRadius:12,padding:14,marginBottom:18,border:`1px solid ${STS.paid.c}40`}}>
+          <p style={{margin:'0 0 8px',fontSize:12,color:STS.paid.c,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>💰 {L==='en'?'Payment Record':'Talaan ng Bayad'}</p>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+            <span style={{fontSize:13,color:'#374151',fontWeight:700}}>{L==='en'?'Date paid':'Petsa ng bayad'}</span>
+            <span style={{fontSize:14,color:'#16a34a',fontWeight:800}}>{selV.paidDate?pd(selV.paidDate).toLocaleDateString('en-CA',{weekday:'short',month:'short',day:'numeric',year:'numeric'}):'—'}</span>
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:8,borderTop:`1px solid ${STS.paid.c}30`}}>
+            <span style={{fontSize:13,color:'#374151',fontWeight:700}}>{L==='en'?'Amount transferred':'Halagang ipinadala'}</span>
+            <span style={{fontWeight:900,color:'#16a34a',fontSize:22}}>{cur(selV.paidAmount)}</span>
+          </div>
+          {selV.receipt&&<div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${STS.paid.c}30`}}>
+            <p style={{margin:'0 0 6px',fontSize:11,color:STS.paid.c,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>📎 {L==='en'?'Receipt':'Resibo'}</p>
+            <img src={selV.receipt} onClick={()=>setZoomImage(selV.receipt)} style={{width:'100%',maxHeight:200,objectFit:'contain',borderRadius:8,border:'1px solid #e5e7eb',background:'white',cursor:'zoom-in'}} alt="receipt"/>
+            <p style={{margin:'4px 0 0',fontSize:11,color:'#9ca3af',fontWeight:600,textAlign:'center'}}>{L==='en'?'Tap image to enlarge':'I-tap ang larawan para palakihin'}</p>
+          </div>}
+        </div>}
+        {role==='admin'&&selV.status!=='paid'&&<div style={{marginBottom:18}}>
+          <p style={{margin:'0 0 10px',fontSize:13,fontWeight:700,color:'#6b7280'}}>{L==='en'?'Update visit status:':'I-update ang katayuan:'}</p>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            {selV.status!=='upcoming'&&<button onClick={()=>updateVisit(selDate,{status:'upcoming'})} style={{padding:'11px 8px',background:STS.upcoming.bg,color:STS.upcoming.c,border:`1px solid ${STS.upcoming.c}50`,borderRadius:12,fontFamily:'inherit',fontWeight:800,cursor:'pointer',fontSize:14}}>⏳ {L==='en'?'Upcoming':'Paparating'}</button>}
+            {selV.status!=='worked'&&<button onClick={()=>updateVisit(selDate,{status:'worked',hours:parseFloat(hrsVal)||7})} style={{padding:'11px 8px',background:STS.worked.bg,color:STS.worked.c,border:`1px solid ${STS.worked.c}50`,borderRadius:12,fontFamily:'inherit',fontWeight:800,cursor:'pointer',fontSize:14}}>✅ {L==='en'?'Worked':'Nagtrabaho'}</button>}
+            {selV.status!=='cancelled'&&<button onClick={()=>updateVisit(selDate,{status:'cancelled'})} style={{padding:'11px 8px',background:STS.cancelled.bg,color:STS.cancelled.c,border:`1px solid ${STS.cancelled.c}50`,borderRadius:12,fontFamily:'inherit',fontWeight:800,cursor:'pointer',fontSize:14}}>❌ {L==='en'?'Cancelled':'Nakansela'}</button>}
+            {selV.status!=='rescheduled'&&<button onClick={()=>updateVisit(selDate,{status:'rescheduled'})} style={{padding:'11px 8px',background:STS.rescheduled.bg,color:STS.rescheduled.c,border:`1px solid ${STS.rescheduled.c}50`,borderRadius:12,fontFamily:'inherit',fontWeight:800,cursor:'pointer',fontSize:14}}>🔄 {L==='en'?'Rescheduled':'Muling Iskedyul'}</button>}
+          </div>
+          {selV.status==='worked'&&<div style={{marginTop:14,padding:14,background:STS.paid.bg,borderRadius:12,border:`1px solid ${STS.paid.c}40`}}>
+            <p style={{margin:'0 0 10px',fontSize:12,fontWeight:800,color:STS.paid.c,textTransform:'uppercase',letterSpacing:0.5}}>💰 {L==='en'?'Record Payment':'Itala ang Bayad'}</p>
+            <div style={{marginBottom:10}}>
+              <label style={lbl}>{L==='en'?'Payment date':'Petsa ng bayad'}</label>
+              <input type="date" value={paidDateVal} onChange={e=>setPaidDateVal(e.target.value)} style={{...inp,padding:'10px 12px'}}/>
+            </div>
+            <div style={{marginBottom:10}}>
+              <label style={lbl}>{L==='en'?'Custom amount (leave blank for auto)':'Espesyal na halaga (opsyonal)'}</label>
+              <input type="number" value={amtVal} onChange={e=>setAmtVal(e.target.value)} placeholder={String(amt)} style={{...inp,fontWeight:500,padding:'10px 12px'}}/>
+            </div>
+            <div style={{marginBottom:12}}>
+              <label style={lbl}>{L==='en'?'Receipt / proof of transfer (optional)':'Resibo / patunay ng bayad (opsyonal)'}</label>
+              {receiptVal?<div><img src={receiptVal} style={{width:'100%',maxHeight:180,objectFit:'contain',borderRadius:8,border:'1px solid #e5e7eb',background:'white'}}/><button onClick={()=>setReceiptVal('')} style={{marginTop:6,padding:'6px 12px',background:'white',color:STS.cancelled.c,border:`1px solid ${STS.cancelled.c}50`,borderRadius:8,fontFamily:'inherit',fontWeight:700,fontSize:12,cursor:'pointer'}}>✕ {L==='en'?'Remove image':'Alisin'}</button></div>:<label style={{display:'block',padding:'12px',background:'white',border:'2px dashed #cbd5e1',borderRadius:10,textAlign:'center',cursor:'pointer',fontSize:13,fontWeight:700,color:'#6b7280'}}>📷 {L==='en'?'Tap to upload screenshot':'I-tap para mag-upload'}<input type="file" accept="image/*" onChange={handleReceiptUpload} style={{display:'none'}}/></label>}
+            </div>
+            <button onClick={()=>markPaid(selDate)} style={{width:'100%',padding:13,background:STS.paid.c,color:'white',border:'none',borderRadius:12,fontFamily:'inherit',fontWeight:800,cursor:'pointer',fontSize:15,boxShadow:`0 3px 10px ${STS.paid.c}50`}}>💰 {L==='en'?'Confirm Payment':'Kumpirmahin ang Bayad'}</button>
+          </div>}
+        </div>}
+        <div>
+          <label style={lbl}>💬 {L==='en'?'Day Chat':'Talastasan ng Araw'}</label>
+          {(selV.comments&&selV.comments.length>0)?<div style={{maxHeight:280,overflowY:'auto',background:BG,borderRadius:12,padding:10,marginBottom:8,display:'flex',flexDirection:'column',gap:8}}>
+            {selV.comments.map(c=>{const mine=c.sender===role;const isEd=c.id===editCommentId;const delPending=pendingDel&&pendingDel.scope==='comment'&&pendingDel.id===c.id;
+              if(isEd)return(<div key={c.id} style={{display:'flex',flexDirection:'column',alignItems:'stretch',width:'100%',background:'white',padding:10,borderRadius:12,border:`2px solid ${P}`}}>
+                <textarea value={editCommentText} onChange={e=>setEditCommentText(e.target.value)} rows={3} style={{width:'100%',padding:10,border:'1px solid #e5e7eb',borderRadius:8,fontFamily:'inherit',fontSize:14,boxSizing:'border-box',outline:'none',resize:'vertical',marginBottom:8}}/>
+                <div style={{display:'flex',gap:6,justifyContent:'flex-end'}}>
+                  <button onClick={()=>{setEditCommentId(null);setEditCommentText('');}} style={{padding:'7px 14px',background:'#f3f4f6',color:'#6b7280',border:'none',borderRadius:8,fontFamily:'inherit',fontWeight:700,fontSize:13,cursor:'pointer'}}>{L==='en'?'Cancel':'Kanselahin'}</button>
+                  <button onClick={saveEditComment} style={{padding:'7px 14px',background:P,color:'white',border:'none',borderRadius:8,fontFamily:'inherit',fontWeight:700,fontSize:13,cursor:'pointer'}}>{L==='en'?'Save':'I-save'}</button>
+                </div>
+              </div>);
+              return(<div key={c.id} style={{display:'flex',flexDirection:'column',alignItems:mine?'flex-end':'flex-start'}}>
+              <p style={{margin:'0 0 3px',fontSize:10,color:'#9ca3af',fontWeight:700,paddingLeft:4,paddingRight:4}}>{c.name} · {c.time}{c.edited?` · ${L==='en'?'edited':'na-edit'}`:''}</p>
+              {c.image&&<img src={c.image} onClick={()=>setZoomImage(c.image)} style={{maxWidth:'70%',maxHeight:200,borderRadius:12,marginBottom:c.text?4:0,cursor:'zoom-in',boxShadow:'0 1px 3px rgba(0,0,0,0.12)'}} alt=""/>}
+              {c.text&&<div style={{background:mine?P:'white',color:mine?'white':'#1f2937',borderRadius:mine?'14px 14px 3px 14px':'14px 14px 14px 3px',padding:'9px 13px',maxWidth:'85%',boxShadow:'0 1px 3px rgba(0,0,0,0.08)',fontSize:14,lineHeight:1.45,wordBreak:'break-word'}}>{c.text}</div>}
+              {mine&&<div style={{display:'flex',gap:10,marginTop:3,paddingRight:4}}>
+                {c.text&&<button onClick={()=>startEditComment(c)} style={{background:'none',border:'none',color:'#6b7280',fontFamily:'inherit',fontSize:11,fontWeight:700,cursor:'pointer',padding:'2px 4px'}}>✏️ {L==='en'?'Edit':'I-edit'}</button>}
+                <button onClick={()=>askDel('comment',c.id)} style={{background:'none',border:'none',color:delPending?'#dc2626':'#6b7280',fontFamily:'inherit',fontSize:11,fontWeight:delPending?800:700,cursor:'pointer',padding:'2px 4px'}}>🗑 {delPending?(L==='en'?'Tap again':'I-tap muli'):(L==='en'?'Delete':'Burahin')}</button>
+              </div>}
+            </div>);})}
+          </div>:<p style={{margin:'0 0 8px',fontSize:13,color:'#9ca3af',fontWeight:600,textAlign:'center',padding:'12px 0',background:BG,borderRadius:12}}>{L==='en'?'No messages yet for this day':'Wala pang mensahe para sa araw na ito'}</p>}
+          {commentImg&&<div style={{position:'relative',marginBottom:8,display:'inline-block'}}><img src={commentImg} style={{maxWidth:120,maxHeight:120,borderRadius:10,border:'1px solid #e5e7eb'}}/><button onClick={()=>setCommentImg('')} style={{position:'absolute',top:-6,right:-6,background:'#ef4444',color:'white',border:'2px solid white',width:24,height:24,borderRadius:12,fontSize:14,fontWeight:800,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,lineHeight:1}}>×</button></div>}
+          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+            <label style={{background:'#f1f5f9',color:'#64748b',border:'none',borderRadius:'50%',width:42,height:42,cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>📷<input type="file" accept="image/*" onChange={handleCommentImg} style={{display:'none'}}/></label>
+            <input value={commentVal} onChange={e=>setCommentVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addComment()} placeholder={L==='en'?'e.g. Venus, I left the dishes full...':'hal. Venus, may pinggan sa lababo...'} style={{flex:1,padding:'11px 14px',border:'1px solid #e5e7eb',borderRadius:22,fontFamily:'inherit',fontSize:14,outline:'none',background:'white',minWidth:0}}/>
+            <button onClick={addComment} style={{background:P,color:'white',border:'none',borderRadius:'50%',width:42,height:42,cursor:'pointer',fontSize:15,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,boxShadow:`0 2px 6px ${P}50`}}>➤</button>
+          </div>
+        </div>
+      </div>
+    </div>);
+  };
+
+  return(<div style={{fontFamily:"'Nunito',system-ui,sans-serif",background:BG,minHeight:'100vh',maxWidth:480,margin:'0 auto',position:'relative'}}>
+    <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');*{box-sizing:border-box;}button:active{opacity:.85;transform:scale(.97);}input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;}@media print{.np{display:none!important;}body{background:white;}}`}</style>
+    <div className="np" style={{background:`linear-gradient(135deg,${P},#0d9488)`,padding:'14px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,zIndex:50,boxShadow:'0 2px 10px rgba(0,0,0,0.15)'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10}}><span style={{fontSize:26}}>🏠</span><div><p style={{margin:0,color:'white',fontWeight:900,fontSize:17,lineHeight:1.1}}>Home Care</p><p style={{margin:0,color:'rgba(255,255,255,.75)',fontSize:12,fontWeight:600,lineHeight:1}}>{role==='admin'?'🔑 Eran & Yahalom':'✨ Venus'}</p></div></div>
+      <div style={{display:'flex',gap:6}}>
+        <button onClick={()=>setLang(L==='en'?'tl':'en')} style={{background:'rgba(255,255,255,.2)',color:'white',border:'none',borderRadius:12,padding:'5px 10px',fontFamily:'inherit',fontWeight:700,cursor:'pointer',fontSize:12}}>{L==='en'?'🇵🇭 Filipino':'🇨🇦 English'}</button>
+        <button onClick={()=>{setRole(null);setTab('calendar');setSettEdit(null);}} style={{background:'rgba(255,255,255,.15)',color:'white',border:'none',borderRadius:12,padding:'5px 10px',fontFamily:'inherit',fontWeight:700,cursor:'pointer',fontSize:12}}>{L==='en'?'Sign Out':'Lumabas'}</button>
+      </div>
+    </div>
+    <div style={{padding:16,paddingBottom:88}}>
+      {tab==='calendar'&&CalendarTab()}
+      {tab==='payment'&&PaymentTab()}
+      {tab==='messages'&&MessagesTab()}
+      {tab==='settings'&&SettingsTab()}
+    </div>
+    <div className="np" style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:'white',borderTop:'1px solid #e5e7eb',display:'flex',zIndex:50,boxShadow:'0 -2px 8px rgba(0,0,0,0.08)'}}>
+      {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:'10px 4px 12px',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1,position:'relative'}}><span style={{fontSize:22}}>{t.e}</span><span style={{fontSize:11,fontWeight:700,color:tab===t.id?P:'#9ca3af',fontFamily:'inherit'}}>{t[L]}</span>{t.id==='messages'&&unread>0&&role==='admin'&&<span style={{position:'absolute',top:6,right:'calc(50% - 18px)',background:'#ef4444',color:'white',borderRadius:10,minWidth:18,height:18,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,padding:'0 4px'}}>{unread}</span>}{tab===t.id&&<div style={{position:'absolute',top:0,left:'25%',right:'25%',height:3,background:P,borderRadius:'0 0 4px 4px'}}/>}</button>)}
+    </div>
+    {VisitModal()}
+    {zoomImage&&<div onClick={()=>setZoomImage(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:16,cursor:'zoom-out'}}>
+      <img src={zoomImage} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',borderRadius:8}} alt="zoom"/>
+      <button onClick={e=>{e.stopPropagation();setZoomImage(null);}} style={{position:'absolute',top:16,right:16,background:'rgba(255,255,255,0.95)',border:'none',width:42,height:42,borderRadius:21,fontSize:22,cursor:'pointer',color:'#1f2937',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+    </div>}
+  </div>);
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
